@@ -7,49 +7,47 @@ import Sanctuary from '../components/Sanctuary';
 import CinematicCamera from '../components/CinematicCamera';
 import HUD from '../components/HUD';
 
-/* ─── Loading Fallback ─── */
+/* ─── Loading Screen ─── */
 function LoadingScreen() {
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#020206]">
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#1a140e]">
       <div className="text-center">
         <div className="relative w-16 h-16 mx-auto mb-6">
           <div
             className="absolute inset-0 rounded-full border-2 border-transparent animate-spin"
             style={{
-              borderTopColor: '#FFD700',
-              borderRightColor: '#00FFCC',
-              animationDuration: '1.5s',
+              borderTopColor: '#D4A76A',
+              borderRightColor: '#6B9F3B',
+              animationDuration: '2s',
             }}
           />
           <div
-            className="absolute inset-2 rounded-full border-2 border-transparent animate-spin"
+            className="absolute inset-3 rounded-full border-2 border-transparent animate-spin"
             style={{
-              borderBottomColor: '#0088FF',
-              borderLeftColor: '#FF2255',
-              animationDuration: '2s',
+              borderBottomColor: '#8B7355',
+              borderLeftColor: '#5C3A1E',
+              animationDuration: '2.5s',
               animationDirection: 'reverse',
             }}
           />
         </div>
-        <p className="text-white/40 text-sm">جارٍ تحميل محمية الأنوار...</p>
+        <p className="text-[#A08060] text-sm">جارٍ تحميل المزرعة المباركة...</p>
       </div>
     </div>
   );
 }
 
-/* ─── 3D Scene Content ─── */
+/* ─── 3D Scene ─── */
 function Scene() {
   return (
     <>
-      <color attach="background" args={['#020206']} />
-
-      {/* Environment */}
+      {/* Sanctuary: sky, terrain, vegetation, stables, lighting */}
       <Sanctuary />
 
-      {/* The 4 Luminous Entities */}
+      {/* The 4 realistic animals */}
       <AnimalFactory />
 
-      {/* Cinematic Camera with smooth transitions */}
+      {/* Cinematic camera with zoom transitions */}
       <CinematicCamera />
     </>
   );
@@ -58,7 +56,7 @@ function Scene() {
 /* ─── Main Page ─── */
 export default function GamePage() {
   return (
-    <main className="w-full h-screen bg-[#020206] relative overflow-hidden">
+    <main className="w-full h-screen bg-[#1a140e] relative overflow-hidden">
       {/* HUD Overlay */}
       <HUD />
 
@@ -69,7 +67,7 @@ export default function GamePage() {
           gl={{
             antialias: true,
             toneMapping: THREE.ACESFilmicToneMapping,
-            toneMappingExposure: 1.2,
+            toneMappingExposure: 1.0,
             alpha: false,
           }}
           dpr={[1, 2]}

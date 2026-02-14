@@ -6,52 +6,52 @@ const ANIMALS = [
     name: 'القصواء',
     title: 'الناقة المباركة',
     description: 'ناقة النبي ﷺ التي حملته في هجرته إلى المدينة المنورة',
-    color: '#FFB830',
-    emissive: '#FF8C00',
-    aura: 'golden',
-    position: [-8, 0, -3],
-    luminance: 1.0,
-    maxLuminance: 5.0,
+    bodyColor: '#C4944A',
+    furColor: '#A67B3D',
+    position: [-10, 0, -4],
+    happiness: 1.0,
+    maxHappiness: 5.0,
     interactions: 0,
+    sound: 'camel',
   },
   {
     id: 'duldul',
     name: 'دُلدُل',
     title: 'البغلة الشريفة',
     description: 'بغلة النبي ﷺ التي أهداها له المقوقس حاكم مصر',
-    color: '#00FFCC',
-    emissive: '#00CC99',
-    aura: 'emerald',
-    position: [-2.8, 0, 3],
-    luminance: 1.0,
-    maxLuminance: 5.0,
+    bodyColor: '#6B5B4A',
+    furColor: '#4A3C2E',
+    position: [-3.5, 0, 5],
+    happiness: 1.0,
+    maxHappiness: 5.0,
     interactions: 0,
+    sound: 'mule',
   },
   {
     id: 'sakb',
     name: 'السَّكْب',
     title: 'الفرس السريع',
     description: 'فرس النبي ﷺ الأول الذي اشتراه من أعرابي',
-    color: '#FF2255',
-    emissive: '#CC0033',
-    aura: 'crimson',
-    position: [2.8, 0, 3],
-    luminance: 1.0,
-    maxLuminance: 5.0,
+    bodyColor: '#3B2415',
+    furColor: '#1A0F08',
+    position: [3.5, 0, 5],
+    happiness: 1.0,
+    maxHappiness: 5.0,
     interactions: 0,
+    sound: 'horse',
   },
   {
     id: 'ufayr',
     name: 'عُفَيْر',
     title: 'الحمار الوفي',
     description: 'حمار النبي ﷺ الذي أهداه له فروة بن عمرو الجذامي',
-    color: '#3388FF',
-    emissive: '#0055CC',
-    aura: 'sapphire',
-    position: [8, 0, -3],
-    luminance: 1.0,
-    maxLuminance: 5.0,
+    bodyColor: '#8C8C8C',
+    furColor: '#5C5C5C',
+    position: [10, 0, -4],
+    happiness: 1.0,
+    maxHappiness: 5.0,
     interactions: 0,
+    sound: 'donkey',
   },
 ];
 
@@ -59,16 +59,17 @@ const useStore = create((set, get) => ({
   animals: ANIMALS,
   selectedAnimal: null,
   cameraTarget: null,
-  audioEnabled: false,
+  audioEnabled: true,
+  timeOfDay: 'golden', // 'morning' | 'golden' | 'noon'
 
-  // Nurture an animal — increases luminance
+  // Nurture / interact with animal
   nurture: (animalId) => {
     set((state) => ({
       animals: state.animals.map((a) =>
         a.id === animalId
           ? {
               ...a,
-              luminance: Math.min(a.luminance + 0.4, a.maxLuminance),
+              happiness: Math.min(a.happiness + 0.4, a.maxHappiness),
               interactions: a.interactions + 1,
             }
           : a
@@ -85,22 +86,19 @@ const useStore = create((set, get) => ({
     });
   },
 
-  // Clear selection
   clearSelection: () => {
     set({ selectedAnimal: null, cameraTarget: null });
   },
 
-  // Toggle audio
   toggleAudio: () => {
     set((state) => ({ audioEnabled: !state.audioEnabled }));
   },
 
-  // Reset all luminance
   resetAll: () => {
     set((state) => ({
       animals: state.animals.map((a) => ({
         ...a,
-        luminance: 1.0,
+        happiness: 1.0,
         interactions: 0,
       })),
       selectedAnimal: null,

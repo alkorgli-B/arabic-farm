@@ -1,8 +1,8 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'المزرعة المقدسة | Luminous Sanctuary',
-  description: 'محمية الأنوار - حيوانات مقدسة من التاريخ الإسلامي في بيئة ثلاثية الأبعاد',
+  title: 'المزرعة المباركة | The Blessed Farm',
+  description: 'مزرعة تفاعلية ثلاثية الأبعاد تضم حيوانات من التاريخ الإسلامي',
 };
 
 export default function RootLayout({ children }) {
@@ -15,7 +15,7 @@ export default function RootLayout({ children }) {
         />
       </head>
       <body
-        className="font-['Noto_Kufi_Arabic',sans-serif] bg-black text-white antialiased"
+        className="font-['Noto_Kufi_Arabic',sans-serif] bg-[#1a140e] text-[#F5E6C8] antialiased"
         style={{ margin: 0, overflow: 'hidden' }}
       >
         {children}
