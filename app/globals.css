@@ -3,18 +3,63 @@
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 255, 255, 255;
-  --background-start-rgb: 0, 0, 0;
-  --background-end-rgb: 0, 0, 0;
+  --neon-cyan: #00ffcc;
+  --neon-blue: #0088ff;
+  --neon-gold: #ffd700;
+  --neon-pink: #ff0055;
+  --bg-deep: #020206;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background: black;
+  color: white;
+  background: var(--bg-deep);
   margin: 0;
-  overflow: hidden; /* لمنع التمرير خارج المزرعة */
+  overflow: hidden;
+  font-family: 'Noto Kufi Arabic', sans-serif;
 }
 
 canvas {
-  touch-action: none; /* لتحسين تجربة اللمس على الجوال */
+  touch-action: none;
+}
+
+/* Glass-morphism utility */
+.glass {
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Neon glow text utilities */
+.glow-cyan {
+  text-shadow: 0 0 8px rgba(0, 255, 204, 0.6), 0 0 24px rgba(0, 255, 204, 0.3);
+}
+
+.glow-gold {
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.6), 0 0 24px rgba(255, 215, 0, 0.3);
+}
+
+/* Pulse animation for sanctuary cells */
+@keyframes neonPulse {
+  0%, 100% { opacity: 0.08; }
+  50% { opacity: 0.2; }
+}
+
+.neon-pulse {
+  animation: neonPulse 3s ease-in-out infinite;
+}
+
+/* Scrollbar hide */
+::-webkit-scrollbar {
+  display: none;
+}
+
+/* Selection color */
+::selection {
+  background: rgba(0, 255, 204, 0.3);
+  color: white;
 }
