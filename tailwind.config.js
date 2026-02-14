@@ -8,10 +8,11 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        neonCyan: '#00ffcc',
-        neonBlue: '#0088FF',
-        neonPink: '#FF0055',
-        neonGold: '#FFD700',
+        sand: '#D4A76A',
+        parchment: '#F5E6C8',
+        earth: '#5C4033',
+        olive: '#6B7F3B',
+        warmBrown: '#8B7355',
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',

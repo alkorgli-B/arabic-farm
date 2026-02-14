@@ -1,53 +1,97 @@
 'use client';
 import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Stars } from '@react-three/drei';
+import { Sky, Cloud, ContactShadows, Environment } from '@react-three/drei';
 import * as THREE from 'three';
 import useStore from '../store/useStore';
 
-/* ─── Neon Pulsing Grid Floor ─── */
-function NeonGrid() {
-  const gridRef = useRef();
+/* ═══════════════════════════════════════════
+   Procedural Terrain — grass + dirt paths
+   ═══════════════════════════════════════════ */
+function Terrain() {
   const materialRef = useRef();
 
-  const gridShader = useMemo(
+  const terrainShader = useMemo(
     () => ({
       uniforms: {
         uTime: { value: 0 },
-        uColor1: { value: new THREE.Color('#0a0a0a') },
-        uColor2: { value: new THREE.Color('#FFD700') },
-        uColor3: { value: new THREE.Color('#0088FF') },
+        uGrassColor1: { value: new THREE.Color('#4A7C2E') },
+        uGrassColor2: { value: new THREE.Color('#6B9F3B') },
+        uDirtColor: { value: new THREE.Color('#8B7355') },
+        uPathColor: { value: new THREE.Color('#A09070') },
       },
       vertexShader: `
         varying vec2 vUv;
+        varying vec3 vWorldPos;
         void main() {
           vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          vWorldPos = worldPos.xyz;
+          gl_Position = projectionMatrix * viewMatrix * worldPos;
         }
       `,
       fragmentShader: `
         uniform float uTime;
-        uniform vec3 uColor1;
-        uniform vec3 uColor2;
-        uniform vec3 uColor3;
+        uniform vec3 uGrassColor1;
+        uniform vec3 uGrassColor2;
+        uniform vec3 uDirtColor;
+        uniform vec3 uPathColor;
         varying vec2 vUv;
+        varying vec3 vWorldPos;
+
+        // Hash-based noise
+        float hash(vec2 p) {
+          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+        }
+
+        float noise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          float a = hash(i);
+          float b = hash(i + vec2(1.0, 0.0));
+          float c = hash(i + vec2(0.0, 1.0));
+          float d = hash(i + vec2(1.0, 1.0));
+          return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+        }
+
+        float fbm(vec2 p) {
+          float v = 0.0;
+          float a = 0.5;
+          for (int i = 0; i < 4; i++) {
+            v += a * noise(p);
+            p *= 2.0;
+            a *= 0.5;
+          }
+          return v;
+        }
 
         void main() {
-          vec2 grid = abs(fract(vUv * 40.0 - 0.5) - 0.5) / fwidth(vUv * 40.0);
-          float line = min(grid.x, grid.y);
-          float gridMask = 1.0 - min(line, 1.0);
+          vec2 worldUv = vWorldPos.xz * 0.08;
 
-          // Radial pulse from center
-          float dist = length(vUv - 0.5) * 2.0;
-          float pulse = sin(dist * 10.0 - uTime * 2.0) * 0.5 + 0.5;
-          pulse *= smoothstep(1.0, 0.0, dist);
+          // Grass variation
+          float grassNoise = fbm(worldUv * 8.0);
+          vec3 grass = mix(uGrassColor1, uGrassColor2, grassNoise);
 
-          // Mix golden and blue based on position
-          vec3 gridColor = mix(uColor2, uColor3, sin(uTime * 0.5) * 0.5 + 0.5);
-          vec3 finalColor = mix(uColor1, gridColor, gridMask * (0.3 + pulse * 0.5));
+          // Dirt patches
+          float dirtNoise = fbm(worldUv * 3.0 + 10.0);
+          float dirtMask = smoothstep(0.55, 0.7, dirtNoise);
 
-          float alpha = gridMask * 0.6 + 0.05;
-          gl_FragColor = vec4(finalColor, alpha);
+          // Paths between animal areas (radial from center)
+          float pathDist = abs(vWorldPos.x) * 0.08;
+          float pathMask = smoothstep(0.8, 0.6, pathDist) * 0.3;
+          // Cross paths
+          float crossPath = smoothstep(0.15, 0.05, abs(fract(vWorldPos.z * 0.05) - 0.5));
+          pathMask += crossPath * 0.15;
+
+          vec3 ground = mix(grass, uDirtColor, dirtMask * 0.4);
+          ground = mix(ground, uPathColor, pathMask);
+
+          // Subtle wind shimmer
+          float wind = sin(vWorldPos.x * 2.0 + uTime * 0.8) * sin(vWorldPos.z * 1.5 + uTime * 0.6) * 0.03;
+          ground += vec3(wind * 0.5, wind, wind * 0.2);
+
+          gl_FragColor = vec4(ground, 1.0);
         }
       `,
     }),
@@ -61,48 +105,275 @@ function NeonGrid() {
   });
 
   return (
-    <mesh ref={gridRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.5, 0]}>
-      <planeGeometry args={[60, 60, 1, 1]} />
-      <shaderMaterial
-        ref={materialRef}
-        args={[gridShader]}
-        transparent
-        side={THREE.DoubleSide}
-        depthWrite={false}
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
+      <planeGeometry args={[80, 80, 1, 1]} />
+      <shaderMaterial ref={materialRef} args={[terrainShader]} />
+    </mesh>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   Procedural Tree
+   ═══════════════════════════════════════════ */
+function Tree({ position, scale = 1, type = 'oak' }) {
+  const treeRef = useRef();
+  const initialY = useRef(Math.random() * Math.PI * 2);
+
+  useFrame((state) => {
+    if (!treeRef.current) return;
+    // Gentle wind sway
+    const t = state.clock.elapsedTime;
+    treeRef.current.rotation.z = Math.sin(t * 0.5 + initialY.current) * 0.02 * scale;
+  });
+
+  if (type === 'palm') {
+    return (
+      <group ref={treeRef} position={position} scale={scale}>
+        {/* Palm trunk — slightly curved */}
+        <mesh position={[0, 2, 0]} castShadow>
+          <cylinderGeometry args={[0.12, 0.18, 4, 8]} />
+          <meshStandardMaterial color="#6B4E2F" roughness={0.9} />
+        </mesh>
+        {/* Palm fronds */}
+        {[0, 60, 120, 180, 240, 300].map((angle, i) => (
+          <mesh
+            key={i}
+            position={[
+              Math.cos((angle * Math.PI) / 180) * 0.8,
+              4.1,
+              Math.sin((angle * Math.PI) / 180) * 0.8,
+            ]}
+            rotation={[
+              0.7,
+              (angle * Math.PI) / 180,
+              0.3,
+            ]}
+            castShadow
+          >
+            <coneGeometry args={[0.15, 2.2, 4]} />
+            <meshStandardMaterial color="#3B6B1E" roughness={0.7} side={THREE.DoubleSide} />
+          </mesh>
+        ))}
+        {/* Date clusters */}
+        <mesh position={[0.2, 3.8, 0.1]}>
+          <sphereGeometry args={[0.12, 6, 6]} />
+          <meshStandardMaterial color="#8B4513" roughness={0.8} />
+        </mesh>
+      </group>
+    );
+  }
+
+  // Default: broad-leaf tree
+  return (
+    <group ref={treeRef} position={position} scale={scale}>
+      {/* Trunk */}
+      <mesh position={[0, 1.2, 0]} castShadow>
+        <cylinderGeometry args={[0.15, 0.25, 2.4, 7]} />
+        <meshStandardMaterial color="#5C3A1E" roughness={0.95} />
+      </mesh>
+      {/* Canopy layers */}
+      <mesh position={[0, 3, 0]} castShadow>
+        <dodecahedronGeometry args={[1.4, 1]} />
+        <meshStandardMaterial color="#3D6B1A" roughness={0.75} flatShading />
+      </mesh>
+      <mesh position={[0.4, 3.5, 0.3]} castShadow>
+        <dodecahedronGeometry args={[0.9, 1]} />
+        <meshStandardMaterial color="#4A7C2E" roughness={0.7} flatShading />
+      </mesh>
+      <mesh position={[-0.3, 2.8, -0.2]} castShadow>
+        <dodecahedronGeometry args={[1.0, 1]} />
+        <meshStandardMaterial color="#2F5515" roughness={0.8} flatShading />
+      </mesh>
+    </group>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   Shrub
+   ═══════════════════════════════════════════ */
+function Shrub({ position, scale = 1 }) {
+  return (
+    <group position={position} scale={scale}>
+      <mesh position={[0, 0.3, 0]} castShadow>
+        <dodecahedronGeometry args={[0.45, 1]} />
+        <meshStandardMaterial color="#4A7025" roughness={0.8} flatShading />
+      </mesh>
+      <mesh position={[0.25, 0.2, 0.15]}>
+        <dodecahedronGeometry args={[0.3, 1]} />
+        <meshStandardMaterial color="#3B6020" roughness={0.85} flatShading />
+      </mesh>
+    </group>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   Rock
+   ═══════════════════════════════════════════ */
+function Rock({ position, scale = 1 }) {
+  return (
+    <mesh position={position} scale={scale} castShadow rotation={[0, Math.random() * Math.PI, 0]}>
+      <dodecahedronGeometry args={[0.35, 0]} />
+      <meshStandardMaterial
+        color="#7A7062"
+        roughness={0.95}
+        metalness={0.05}
+        flatShading
       />
     </mesh>
   );
 }
 
-/* ─── Snowing Light Particles ─── */
-function SnowingLight({ count = 800 }) {
+/* ═══════════════════════════════════════════
+   Mud-Brick Stable / House
+   ═══════════════════════════════════════════ */
+function MudBrickStable({ position, rotation = 0, size = 'medium' }) {
+  const w = size === 'large' ? 5 : size === 'medium' ? 4 : 3.5;
+  const d = size === 'large' ? 4 : 3;
+  const wallH = 2.2;
+
+  return (
+    <group position={position} rotation={[0, rotation, 0]}>
+      {/* Back wall */}
+      <mesh position={[0, wallH / 2, -d / 2]} castShadow receiveShadow>
+        <boxGeometry args={[w, wallH, 0.3]} />
+        <meshStandardMaterial color="#B8956B" roughness={0.95} metalness={0.02} />
+      </mesh>
+      {/* Left wall */}
+      <mesh position={[-w / 2, wallH / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[0.3, wallH, d]} />
+        <meshStandardMaterial color="#A8855B" roughness={0.95} metalness={0.02} />
+      </mesh>
+      {/* Right wall */}
+      <mesh position={[w / 2, wallH / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[0.3, wallH, d]} />
+        <meshStandardMaterial color="#A8855B" roughness={0.95} metalness={0.02} />
+      </mesh>
+      {/* Half front walls (open entrance) */}
+      <mesh position={[-w / 2 + 0.5, wallH / 2, d / 2]} castShadow receiveShadow>
+        <boxGeometry args={[1, wallH, 0.3]} />
+        <meshStandardMaterial color="#B8956B" roughness={0.95} />
+      </mesh>
+      <mesh position={[w / 2 - 0.5, wallH / 2, d / 2]} castShadow receiveShadow>
+        <boxGeometry args={[1, wallH, 0.3]} />
+        <meshStandardMaterial color="#B8956B" roughness={0.95} />
+      </mesh>
+
+      {/* Wooden beam lintel */}
+      <mesh position={[0, wallH - 0.05, d / 2]} castShadow>
+        <boxGeometry args={[w - 1.7, 0.2, 0.35]} />
+        <meshStandardMaterial color="#5C3A1E" roughness={0.9} />
+      </mesh>
+
+      {/* Wooden support beams (roof) */}
+      {[-1.2, 0, 1.2].map((x, i) => (
+        <mesh key={i} position={[x, wallH + 0.1, 0]} castShadow>
+          <boxGeometry args={[0.12, 0.12, d + 0.6]} />
+          <meshStandardMaterial color="#4A2C12" roughness={0.85} />
+        </mesh>
+      ))}
+
+      {/* Palm-frond roof */}
+      <mesh position={[0, wallH + 0.25, 0]} castShadow>
+        <boxGeometry args={[w + 0.8, 0.15, d + 0.8]} />
+        <meshStandardMaterial color="#6B7F3B" roughness={0.9} metalness={0.0} />
+      </mesh>
+      {/* Roof detail layer */}
+      <mesh position={[0, wallH + 0.35, 0]}>
+        <boxGeometry args={[w + 0.4, 0.08, d + 0.4]} />
+        <meshStandardMaterial color="#5A6E30" roughness={0.95} />
+      </mesh>
+
+      {/* Ground — packed earth floor */}
+      <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[w - 0.3, d - 0.3]} />
+        <meshStandardMaterial color="#9B8060" roughness={1.0} />
+      </mesh>
+
+      {/* Feed trough */}
+      <mesh position={[-w / 2 + 0.5, 0.4, -d / 2 + 0.6]} castShadow>
+        <boxGeometry args={[0.6, 0.4, 0.4]} />
+        <meshStandardMaterial color="#5C3A1E" roughness={0.9} />
+      </mesh>
+      {/* Hay inside trough */}
+      <mesh position={[-w / 2 + 0.5, 0.65, -d / 2 + 0.6]}>
+        <sphereGeometry args={[0.2, 6, 4]} />
+        <meshStandardMaterial color="#C4A035" roughness={0.95} flatShading />
+      </mesh>
+
+      {/* Water bowl */}
+      <mesh position={[w / 2 - 0.5, 0.15, -d / 2 + 0.6]} castShadow>
+        <cylinderGeometry args={[0.25, 0.2, 0.3, 8]} />
+        <meshStandardMaterial color="#6B4E2F" roughness={0.85} />
+      </mesh>
+    </group>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   Fence Segments
+   ═══════════════════════════════════════════ */
+function Fence({ start, end }) {
+  const dx = end[0] - start[0];
+  const dz = end[2] - start[2];
+  const length = Math.sqrt(dx * dx + dz * dz);
+  const angle = Math.atan2(dx, dz);
+  const midX = (start[0] + end[0]) / 2;
+  const midZ = (start[2] + end[2]) / 2;
+  const postCount = Math.max(2, Math.floor(length / 1.5));
+
+  return (
+    <group>
+      {/* Horizontal rails */}
+      <mesh position={[midX, 0.5, midZ]} rotation={[0, angle, 0]} castShadow>
+        <boxGeometry args={[0.06, 0.06, length]} />
+        <meshStandardMaterial color="#5C3A1E" roughness={0.9} />
+      </mesh>
+      <mesh position={[midX, 0.9, midZ]} rotation={[0, angle, 0]} castShadow>
+        <boxGeometry args={[0.06, 0.06, length]} />
+        <meshStandardMaterial color="#5C3A1E" roughness={0.9} />
+      </mesh>
+      {/* Posts */}
+      {Array.from({ length: postCount }).map((_, i) => {
+        const t = i / (postCount - 1);
+        const px = start[0] + dx * t;
+        const pz = start[2] + dz * t;
+        return (
+          <mesh key={i} position={[px, 0.55, pz]} castShadow>
+            <cylinderGeometry args={[0.04, 0.05, 1.1, 6]} />
+            <meshStandardMaterial color="#4A2C12" roughness={0.92} />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   Dust Motes (floating particles in golden light)
+   ═══════════════════════════════════════════ */
+function DustMotes({ count = 200 }) {
   const pointsRef = useRef();
 
   const { positions, velocities } = useMemo(() => {
     const pos = new Float32Array(count * 3);
     const vel = new Float32Array(count);
     for (let i = 0; i < count; i++) {
-      pos[i * 3] = (Math.random() - 0.5) * 50;
-      pos[i * 3 + 1] = Math.random() * 30;
-      pos[i * 3 + 2] = (Math.random() - 0.5) * 50;
-      vel[i] = 0.01 + Math.random() * 0.03;
+      pos[i * 3] = (Math.random() - 0.5) * 30;
+      pos[i * 3 + 1] = Math.random() * 8 + 0.5;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 30;
+      vel[i] = 0.002 + Math.random() * 0.008;
     }
     return { positions: pos, velocities: vel };
   }, [count]);
 
-  useFrame(() => {
+  useFrame((state) => {
     if (!pointsRef.current) return;
-    const posArray = pointsRef.current.geometry.attributes.position.array;
+    const posArr = pointsRef.current.geometry.attributes.position.array;
+    const t = state.clock.elapsedTime;
     for (let i = 0; i < count; i++) {
-      posArray[i * 3 + 1] -= velocities[i]; // Fall down
-      posArray[i * 3] += Math.sin(Date.now() * 0.0005 + i) * 0.003; // Gentle sway
-
-      // Reset when below floor
-      if (posArray[i * 3 + 1] < -1) {
-        posArray[i * 3 + 1] = 25 + Math.random() * 10;
-        posArray[i * 3] = (Math.random() - 0.5) * 50;
-        posArray[i * 3 + 2] = (Math.random() - 0.5) * 50;
-      }
+      posArr[i * 3] += Math.sin(t * 0.3 + i * 0.5) * 0.003;
+      posArr[i * 3 + 1] += Math.sin(t * 0.2 + i) * 0.001;
+      posArr[i * 3 + 2] += Math.cos(t * 0.25 + i * 0.3) * 0.003;
     }
     pointsRef.current.geometry.attributes.position.needsUpdate = true;
   });
@@ -118,194 +389,178 @@ function SnowingLight({ count = 800 }) {
         />
       </bufferGeometry>
       <pointsMaterial
-        size={0.08}
-        color="#fffbe6"
+        size={0.04}
+        color="#FFE4A0"
         transparent
-        opacity={0.6}
+        opacity={0.35}
         sizeAttenuation
         depthWrite={false}
-        blending={THREE.AdditiveBlending}
       />
     </points>
   );
 }
 
-/* ─── Sanctuary Cell (Housing for each animal) ─── */
-function SanctuaryCell({ position, color }) {
-  const cellRef = useRef();
-  const edgesRef = useRef();
+/* ═══════════════════════════════════════════
+   Scattered Vegetation Generator
+   ═══════════════════════════════════════════ */
+function VegetationLayer() {
+  const items = useMemo(() => {
+    const result = [];
+    const rng = (seed) => {
+      let s = seed;
+      return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
+    };
+    const rand = rng(42);
 
-  useFrame((state) => {
-    if (!cellRef.current) return;
-    const time = state.clock.elapsedTime;
-    // Subtle breathing animation
-    const breathe = 1 + Math.sin(time * 1.5) * 0.02;
-    cellRef.current.scale.set(breathe, breathe, breathe);
+    // Trees
+    const treePositions = [
+      [-18, 0, -8], [-15, 0, 6], [-20, 0, 2], [18, 0, -6], [16, 0, 8],
+      [20, 0, 0], [-12, 0, 12], [12, 0, -12], [0, 0, -14], [0, 0, 14],
+      [-22, 0, -14], [22, 0, 14], [-8, 0, -15], [8, 0, 15],
+    ];
+    treePositions.forEach((pos, i) => {
+      result.push({
+        type: i % 3 === 0 ? 'palm' : 'tree',
+        position: pos,
+        scale: 0.8 + rand() * 0.6,
+        key: `tree-${i}`,
+      });
+    });
 
-    if (edgesRef.current) {
-      edgesRef.current.material.opacity = 0.1 + Math.sin(time * 2) * 0.05;
+    // Shrubs
+    for (let i = 0; i < 25; i++) {
+      result.push({
+        type: 'shrub',
+        position: [(rand() - 0.5) * 40, 0, (rand() - 0.5) * 40],
+        scale: 0.5 + rand() * 0.8,
+        key: `shrub-${i}`,
+      });
     }
-  });
 
-  // Create wireframe edges
-  const edgesGeometry = useMemo(() => {
-    const box = new THREE.BoxGeometry(5, 4, 5);
-    return new THREE.EdgesGeometry(box);
+    // Rocks
+    for (let i = 0; i < 15; i++) {
+      result.push({
+        type: 'rock',
+        position: [(rand() - 0.5) * 35, 0, (rand() - 0.5) * 35],
+        scale: 0.4 + rand() * 0.8,
+        key: `rock-${i}`,
+      });
+    }
+
+    return result;
   }, []);
 
   return (
-    <group ref={cellRef} position={[position[0], position[1] + 1.5, position[2]]}>
-      {/* Main wireframe structure */}
-      <lineSegments ref={edgesRef} geometry={edgesGeometry}>
-        <lineBasicMaterial color={color} transparent opacity={0.12} />
-      </lineSegments>
-
-      {/* Semi-transparent panels */}
-      <mesh>
-        <boxGeometry args={[5, 4, 5]} />
-        <meshBasicMaterial
-          color={color}
-          transparent
-          opacity={0.02}
-          side={THREE.DoubleSide}
-          depthWrite={false}
-        />
-      </mesh>
-
-      {/* Top accent ring */}
-      <mesh position={[0, 2.1, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[2.5, 0.02, 8, 32]} />
-        <meshBasicMaterial color={color} transparent opacity={0.2} />
-      </mesh>
-
-      {/* Bottom accent ring */}
-      <mesh position={[0, -1.9, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[2.5, 0.02, 8, 32]} />
-        <meshBasicMaterial color={color} transparent opacity={0.15} />
-      </mesh>
-
-      {/* Corner pillars */}
-      {[
-        [-2.4, 0, -2.4],
-        [-2.4, 0, 2.4],
-        [2.4, 0, -2.4],
-        [2.4, 0, 2.4],
-      ].map((p, i) => (
-        <mesh key={i} position={p}>
-          <cylinderGeometry args={[0.02, 0.02, 4, 8]} />
-          <meshBasicMaterial color={color} transparent opacity={0.25} />
-        </mesh>
-      ))}
+    <group>
+      {items.map((item) => {
+        switch (item.type) {
+          case 'palm':
+            return <Tree key={item.key} position={item.position} scale={item.scale} type="palm" />;
+          case 'tree':
+            return <Tree key={item.key} position={item.position} scale={item.scale} type="oak" />;
+          case 'shrub':
+            return <Shrub key={item.key} position={item.position} scale={item.scale} />;
+          case 'rock':
+            return <Rock key={item.key} position={item.position} scale={item.scale} />;
+          default:
+            return null;
+        }
+      })}
     </group>
   );
 }
 
-/* ─── Ambient Floating Orbs ─── */
-function AmbientOrbs({ count = 20 }) {
-  const orbsRef = useRef([]);
-
-  const orbData = useMemo(() => {
-    return Array.from({ length: count }).map(() => ({
-      position: [
-        (Math.random() - 0.5) * 40,
-        Math.random() * 15 + 2,
-        (Math.random() - 0.5) * 40,
-      ],
-      scale: 0.05 + Math.random() * 0.12,
-      speed: 0.3 + Math.random() * 0.7,
-      color: ['#FFD700', '#00FFCC', '#0088FF', '#FF2255'][
-        Math.floor(Math.random() * 4)
-      ],
-    }));
-  }, [count]);
-
-  useFrame((state) => {
-    orbsRef.current.forEach((mesh, i) => {
-      if (!mesh) return;
-      const t = state.clock.elapsedTime * orbData[i].speed;
-      mesh.position.y = orbData[i].position[1] + Math.sin(t) * 1.5;
-      mesh.position.x = orbData[i].position[0] + Math.sin(t * 0.5) * 0.5;
-    });
-  });
-
-  return (
-    <>
-      {orbData.map((orb, i) => (
-        <mesh
-          key={i}
-          ref={(el) => (orbsRef.current[i] = el)}
-          position={orb.position}
-          scale={orb.scale}
-        >
-          <sphereGeometry args={[1, 8, 8]} />
-          <meshBasicMaterial
-            color={orb.color}
-            transparent
-            opacity={0.4}
-            blending={THREE.AdditiveBlending}
-          />
-        </mesh>
-      ))}
-    </>
-  );
-}
-
-/* ─── Master Sanctuary Component ─── */
+/* ═══════════════════════════════════════════
+   Master Sanctuary Component
+   ═══════════════════════════════════════════ */
 export default function Sanctuary() {
   const animals = useStore((s) => s.animals);
 
   return (
     <group>
-      {/* Deep space starfield — golden/blue */}
-      <Stars
-        radius={120}
-        depth={80}
-        count={6000}
-        factor={5}
-        saturation={0.4}
-        fade
-        speed={0.8}
+      {/* ── Realistic Sky — Golden Hour ── */}
+      <Sky
+        distance={450000}
+        sunPosition={[80, 20, -50]}
+        inclination={0.52}
+        azimuth={0.25}
+        turbidity={4}
+        rayleigh={1.5}
+        mieCoefficient={0.005}
+        mieDirectionalG={0.8}
       />
 
-      {/* Secondary smaller stars layer */}
-      <Stars
-        radius={60}
-        depth={40}
-        count={2000}
-        factor={2}
-        saturation={0.1}
-        fade
-        speed={0.3}
+      {/* Soft clouds */}
+      <Cloud position={[-20, 18, -15]} speed={0.15} opacity={0.4} width={12} depth={4} segments={20} />
+      <Cloud position={[15, 22, -20]} speed={0.1} opacity={0.3} width={16} depth={5} segments={25} />
+      <Cloud position={[0, 20, 15]} speed={0.12} opacity={0.25} width={10} depth={3} segments={15} />
+
+      {/* ── Terrain ── */}
+      <Terrain />
+
+      {/* ── Vegetation ── */}
+      <VegetationLayer />
+
+      {/* ── Dust Motes in golden light ── */}
+      <DustMotes count={150} />
+
+      {/* ── Mud-Brick Stables for each animal ── */}
+      <MudBrickStable position={[-10, 0, -7]} rotation={0} size="large" />
+      <MudBrickStable position={[-3.5, 0, 2]} rotation={Math.PI} size="medium" />
+      <MudBrickStable position={[3.5, 0, 2]} rotation={Math.PI} size="medium" />
+      <MudBrickStable position={[10, 0, -7]} rotation={0} size="large" />
+
+      {/* ── Fences ── */}
+      <Fence start={[-14, 0, -10]} end={[-6, 0, -10]} />
+      <Fence start={[-14, 0, -10]} end={[-14, 0, -1]} />
+      <Fence start={[-6, 0, -10]} end={[-6, 0, -1]} />
+
+      <Fence start={[6, 0, -10]} end={[14, 0, -10]} />
+      <Fence start={[6, 0, -10]} end={[6, 0, -1]} />
+      <Fence start={[14, 0, -10]} end={[14, 0, -1]} />
+
+      <Fence start={[-6.5, 0, 0]} end={[-0.5, 0, 0]} />
+      <Fence start={[-6.5, 0, 0]} end={[-6.5, 0, 8]} />
+      <Fence start={[-0.5, 0, 8]} end={[-6.5, 0, 8]} />
+
+      <Fence start={[0.5, 0, 0]} end={[6.5, 0, 0]} />
+      <Fence start={[6.5, 0, 0]} end={[6.5, 0, 8]} />
+      <Fence start={[0.5, 0, 8]} end={[6.5, 0, 8]} />
+
+      {/* ── Lighting — Physical Sun ── */}
+      <directionalLight
+        position={[30, 25, -20]}
+        intensity={2.5}
+        color="#FFF0D0"
+        castShadow
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
+        shadow-camera-far={80}
+        shadow-camera-left={-30}
+        shadow-camera-right={30}
+        shadow-camera-top={30}
+        shadow-camera-bottom={-30}
+        shadow-bias={-0.0005}
+      />
+      <ambientLight intensity={0.4} color="#B8C4D0" />
+      <hemisphereLight skyColor="#87CEEB" groundColor="#5C4033" intensity={0.5} />
+
+      {/* Warm fill light */}
+      <pointLight position={[0, 6, 0]} intensity={0.8} color="#FFD090" distance={30} decay={2} />
+
+      {/* ── Contact shadows for grounding ── */}
+      <ContactShadows
+        position={[0, 0.01, 0]}
+        opacity={0.5}
+        scale={60}
+        blur={2.5}
+        far={12}
+        resolution={512}
+        color="#3A2A1A"
       />
 
-      {/* Neon pulsing grid floor */}
-      <NeonGrid />
-
-      {/* Snowing light particles */}
-      <SnowingLight count={600} />
-
-      {/* Floating ambient orbs */}
-      <AmbientOrbs count={25} />
-
-      {/* Sanctuary cells for each animal */}
-      {animals.map((animal) => (
-        <SanctuaryCell
-          key={animal.id}
-          position={animal.position}
-          color={animal.color}
-        />
-      ))}
-
-      {/* Global ambient lighting */}
-      <ambientLight intensity={0.08} />
-
-      {/* Key lights */}
-      <pointLight position={[0, 15, 0]} intensity={0.8} color="#FFD700" distance={40} decay={2} />
-      <pointLight position={[-15, 8, -10]} intensity={0.5} color="#0088FF" distance={30} decay={2} />
-      <pointLight position={[15, 8, 10]} intensity={0.5} color="#00FFCC" distance={30} decay={2} />
-
-      {/* Fog for depth */}
-      <fog attach="fog" args={['#020206', 20, 60]} />
+      {/* ── HDRI Environment (desert/farm) ── */}
+      <Environment preset="park" background={false} />
     </group>
   );
 }
